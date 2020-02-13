@@ -1,11 +1,11 @@
 package = "relative_require"
 version = "dev-1"
 source = {
-   url = "*** please add URL for source tarball, zip or repository here ***"
+   url = "git@github.com:jasper-lyons/relative_require.git"
 }
 description = {
-   homepage = "*** please enter a project homepage ***",
-   license = "*** please specify a license ***"
+   homepage = "https://github.com/jasper-lyons/relative_require",
+   license = "MIT"
 }
 build = {
    type = "builtin",
