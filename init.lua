@@ -68,7 +68,12 @@ table.insert(package.searchers, 2, function (relativeModule)
       -- We can then check if the cannonical moduleName is loaded and
       -- return it if so.
       if not package.loaded[module] then
-        package.loaded[module] = loadfile(module)()
+        local loader, msg = loadfile(module)()
+        if not loader then
+          return msg
+        end
+
+        package.loaded[module] = loader()
       end
       
       return package.loaded[module]
