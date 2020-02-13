@@ -2,32 +2,53 @@ local separator = package.config:sub(1, 1)
 
 -- todo handle windows '!' (path from .exe)
 local function collapsePath(path)
-  -- turn 'a/./b' into 'a/b'
-  path = path:gsub(separator .. '.' .. separator, separator)
-
-  while path:find(separator .. '..' .. separator) do
+  while path:find(separator .. '%.%.' .. separator) do
     -- turn '/a/../b/c' into '/b/c' 
     path = path:gsub(
-      separator .. '[^' .. separator .. ']-' .. separator .. '..' .. separator,
-      separator
+      separator .. '[^' .. separator .. ']+' .. separator .. '%.%.' .. separator,
+      separator,
+      1
     )
-    -- turn 'a/./b' into 'a/b'
   end
+
+  while path:find(separator .. separator) do
+    -- turn 'a//b' into 'a/b'
+    path = path:gsub(separator .. separator, separator)
+  end
+
+  -- turn 'a/./b' into 'a/b'
+  path = path:gsub(separator .. '.' .. separator, separator)
 
   return path
 end
 
-table.insert(package.searchers, 2, function (relativeModule)
-  local sourceLocation = debug.getinfo(3, 'S').source
+local function exists(filename)
+  local file = io.open(filename, 'r')
+  if file then
+    file:close()
+    return true
+  else
+    return false
+  end
+end
 
-  local currentDir = ''
-  if sourceLocation == '=stdin' then
+table.insert(package.searchers, 2, function (relativeModule)
+  local source = debug.getinfo(3, 'S').source
+
+  local currentDir = (os.getenv('PWD') or os.getenv('CD')) .. separator
+
+  if source == '=stdin' then
     print('relative_require: Requiring from interpreter relative to current working directory')
-    currentDir = (os.getenv('PWD') or os.getenv('CD')) .. separator
-  elseif sourceLocation == '=[C]' then
+  elseif source == '=[C]' then
     return 'Cannot require relative from C file'
   else
-    currentDir = sourceLocation:match("@(.*"..separator..").*.lua") or ''
+    local sourceLocation = source:match('@(.*'..separator..').*%.lua')
+    -- only works for unix...
+    if sourceLocation:find('^'..separator) and exists(sourceLocation) then
+      currentDir = sourceLocation
+    else
+      currentDir = currentDir .. sourceLocation
+    end
   end
 
   local modulePath = relativeModule:match("^(.+)"..separator..".-$") or ''
@@ -50,7 +71,7 @@ table.insert(package.searchers, 2, function (relativeModule)
         package.loaded[module] = loadfile(module)()
       end
       
-      return package.loaded[moduleName]
+      return package.loaded[module]
     end
   else
     return err
