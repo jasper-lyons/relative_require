@@ -17,7 +17,7 @@ local function collapsePath(path)
   end
 
   -- turn 'a/./b' into 'a/b'
-  path = path:gsub(separator .. '.' .. separator, separator)
+  path = path:gsub(separator .. '%.' .. separator, separator)
 
   return path
 end
@@ -32,30 +32,42 @@ local function exists(filename)
   end
 end
 
-table.insert(package.searchers, 2, function (relativeModule)
-  local source = debug.getinfo(3, 'S').source
+local function resolveCurrentDirectory(depth)
+  local source = debug.getinfo(depth, 'S').source
 
   local currentDir = (os.getenv('PWD') or os.getenv('CD')) .. separator
 
   if source == '=stdin' then
     print('relative_require: Requiring from interpreter relative to current working directory')
   elseif source == '=[C]' then
-    return 'Cannot require relative from C file'
+    return nil, 'Cannot require relative from C file'
   else
     local sourceLocation = source:match('@(.*'..separator..').*%.lua')
     -- only works for unix...
-    if sourceLocation:find('^'..separator) and exists(sourceLocation) then
-      currentDir = sourceLocation
-    else
-      currentDir = currentDir .. sourceLocation
+    if sourceLocation then
+      if sourceLocation:find('^'..separator) and exists(sourceLocation) then
+        currentDir = sourceLocation
+      else
+        currentDir = currentDir .. sourceLocation
+      end
     end
+  end
+
+  return currentDir, nil
+end
+
+table.insert(package.searchers, 2, function (relativeModule)
+  local currentDir, err = resolveCurrentDirectory(4)
+  if err then
+    return err
   end
 
   local modulePath = relativeModule:match("^(.+)"..separator..".-$") or ''
   local moduleName = relativeModule:match(separator.."?([^"..separator.."]+)$") or ''
 
   -- use collapse path to identify the canonical path for the module
-  local moduleSearchPath = collapsePath(currentDir .. modulePath .. separator .. '?.lua')
+  local moduleSearchPath = collapsePath(currentDir .. modulePath .. separator .. '?.lua') .. ';' ..
+                           collapsePath(currentDir .. modulePath .. separator .. '?' .. separator .. 'init.lua')
 
   local module, err = package.searchpath(moduleName, moduleSearchPath)
   if module then
@@ -68,10 +80,12 @@ table.insert(package.searchers, 2, function (relativeModule)
       -- We can then check if the cannonical moduleName is loaded and
       -- return it if so.
       if not package.loaded[module] then
-        local loader, msg = loadfile(module)()
-        if not loader then
-          return msg
-        end
+        -- create a new env that holds values just for that file that
+        -- transparently puches reads and changes to the global env
+        -- just like in a normal require
+        local env = setmetatable({ FILE = module }, { __index = _G, __newindex = _G })
+        local loader, msg = loadfile(module, 'tb', env)
+        if not loader then return msg end
 
         package.loaded[module] = loader()
       end
@@ -82,3 +96,5 @@ table.insert(package.searchers, 2, function (relativeModule)
     return err
   end
 end)
+
+return resolveCurrentDirectory
